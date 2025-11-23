@@ -1,0 +1,13 @@
+# Configuration globale
+global:
+  scrape_interval: 15s  # Intervalle de scrutation (en secondes)
+
+# Configuration des jobs de scrutation
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']  # Le serveur Prometheus lui-même
+
+  - job_name: 'node_exporter'
+    static_configs:
+      - targets: ['localhost:9100']  # Node Exporter à scraper

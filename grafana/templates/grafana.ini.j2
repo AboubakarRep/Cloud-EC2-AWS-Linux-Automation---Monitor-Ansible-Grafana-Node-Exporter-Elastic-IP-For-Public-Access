@@ -1,0 +1,39 @@
+#################################### Server #####################################
+
+[server]
+# The HTTP port to bind to.
+http_port = 3000
+
+# The public facing domain name used to access Grafana from a browser
+domain = {{ domain_name }}
+
+# Disable serving Grafana from the root URL (i.e. / instead of /grafana)
+root_url = %(protocol)s://%(domain)s:%(http_port)s/grafana
+
+# Enable or disable the server to serve from the root URL
+serve_from_sub_path = true
+
+#################################### Security ####################################
+
+[security]
+# Set to true to disable the creation of the admin user on startup.
+disable_gravatar = true
+
+# Disable login form
+login_hint = "Login using {{ grafana_admin_user }} / {{ grafana_admin_password }}"
+
+#################################### Paths ######################################
+
+[paths]
+# Path to where grafana will store the sqlite3 db file
+data = /var/lib/grafana
+
+# Directory where grafana stores its data (default is /var/lib/grafana)
+logs = /var/log/grafana
+
+#################################### Dashboards ###################################
+
+[dashboards]
+# Set to true to enable Grafana to automatically load dashboards on start
+load_dashboards = true
+

@@ -1,0 +1,122 @@
+---
+- name: Ajouter le repository Grafana
+  yum_repository:
+    name: grafana
+    description: Grafana repository
+    baseurl: https://rpm.grafana.com
+    repo_gpgcheck: yes
+    gpgcheck: no
+    enabled: yes
+    gpgkey: https://rpm.grafana.com/gpg.key
+    sslverify: yes
+    sslcacert: /etc/pki/tls/certs/ca-bundle.crt
+
+- name: Installer Grafana
+  package:
+    name: grafana
+    state: present
+
+- name: Copier la configuration Grafana
+  template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+  notify: restart grafana
+
+- name: Démarrer et activer Grafana
+  systemd:
+    name: grafana-server
+    state: started
+    enabled: yes
+
+- name: Attendre que Grafana soit démarré
+  wait_for:
+    port: "{{ grafana_port }}"
+    delay: 5
+    timeout: 30
+
+
+# 1. Vérifier si la source de données Prometheus existe
+- name: Vérifier si la source de données Prometheus existe
+  uri:
+    url: "http://localhost:3000/api/datasources"
+    method: GET
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Basic {{ 'admin:admin' | b64encode }}"
+    return_content: yes
+  register: datasources
+  failed_when: false  # Nous ne voulons pas échouer cette tâche ici, nous gérons l'échec plus bas
+
+# 2. Déboguer les datasources pour voir leur structure
+- name: Déboguer les datasources
+  debug:
+    var: datasources
+
+# 3. Vérifier si Prometheus existe dans les datasources et récupérer son ID
+- name: Vérifier si Prometheus existe et récupérer son ID
+  set_fact:
+    prometheus_id: "{{ datasources.json | selectattr('name', 'equalto', 'Prometheus') | map(attribute='id') | first }}"
+  when: datasources.json is defined and datasources.json | length > 0
+
+# 4. Supprimer la source de données Prometheus si elle existe
+- name: Supprimer la source de données Prometheus si elle existe
+  uri:
+    url: "http://localhost:3000/api/datasources/{{ prometheus_id }}"
+    method: DELETE
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Basic {{ 'admin:admin' | b64encode }}"
+  when: prometheus_id is defined  # Ne supprimer que si l'ID de Prometheus est trouvé
+  register: delete_result
+  ignore_errors: yes  # Ignorer si la suppression échoue
+
+# 5. Ajouter la source de données Prometheus dans Grafana via l'API
+- name: Ajouter la source de données Prometheus dans Grafana via l'API
+  uri:
+    url: "http://localhost:3000/api/datasources"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Basic {{ 'admin:admin' | b64encode }}"
+    body:
+      name: "Prometheus"
+      type: "prometheus"
+      url: "http://localhost:9090"
+      access: "proxy"
+      isDefault: true
+      jsonData: {}
+      secureJsonData: {}
+    body_format: json
+    status_code: 200
+  when: delete_result is not failed  # Ajouter la source de données uniquement si la suppression a réussi
+
+
+
+- name: Créer le dashboard de monitoring AWS EC2
+  uri:
+    url: "http://localhost:{{ grafana_port }}/api/dashboards/db"
+    method: POST
+    body_format: json
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Basic {{ 'admin:admin' | b64encode }}"
+    body: "{{ lookup('template', 'aws-dashboard.json.j2') }}"
+    user: "{{ grafana_admin_user }}"
+    password: "{{ grafana_admin_password }}"
+    status_code: 200
+  register: dashboard_result
+
+- name: Ouvrir le port Grafana
+  firewalld:
+    port: "{{ grafana_port }}/tcp"
+    permanent: yes
+    state: enabled
+  notify: reload-firewalld
+
+- name: Afficher les informations de connexion
+  debug:
+    msg: |
+      🎯 Grafana déployé avec succès !
+      📊 URL: http://{{ domain_name }}:{{ grafana_port }}
+      👤 Utilisateur: {{ grafana_admin_user }}
+      🔒 Mot de passe: {{ grafana_admin_password }}

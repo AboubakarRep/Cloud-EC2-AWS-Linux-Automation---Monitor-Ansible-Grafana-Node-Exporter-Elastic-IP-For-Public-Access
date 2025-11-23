@@ -1,0 +1,85 @@
+---
+- name: Créer l'utilisateur prometheus
+  user:
+    name: prometheus
+    system: yes
+    shell: /bin/false
+
+- name: Créer les répertoires
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+  loop:
+    - /etc/prometheus
+    - /var/lib/prometheus
+
+- name: Télécharger Prometheus
+  get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /tmp/prometheus.tar.gz
+
+- name: Extraire Prometheus
+  unarchive:
+    src: /tmp/prometheus.tar.gz
+    dest: /tmp/
+    remote_src: yes
+
+- name: Installer les binaires Prometheus
+  copy:
+    src: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: /usr/local/bin/{{ item }}
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+    remote_src: yes  # Ajouté pour indiquer que les fichiers sont sur le serveur distant après extraction
+  loop:
+    - prometheus
+    - promtool
+
+
+- name: Copier la configuration
+  template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: prometheus
+    group: prometheus
+
+- name: Créer le service systemd
+  copy:
+    content: |
+      [Unit]
+      Description=Prometheus
+      After=network.target
+
+      [Service]
+      User=prometheus
+      Group=prometheus
+      Type=simple
+      ExecStart=/usr/local/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.path=/var/lib/prometheus/ \
+        --web.console.templates=/etc/prometheus/consoles \
+        --web.console.libraries=/etc/prometheus/console_libraries \
+        --web.listen-address=:{{ prometheus_port }}
+
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/prometheus.service
+  notify:
+    - daemon-reload
+    - restart prometheus
+
+- name: Démarrer et activer Prometheus
+  systemd:
+    name: prometheus
+    state: started
+    enabled: yes
+
+- name: Ouvrir le port Prometheus
+  firewalld:
+    port: "{{ prometheus_port }}/tcp"
+    permanent: yes
+    state: enabled
+  notify: reload-firewalld

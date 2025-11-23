@@ -1,0 +1,5 @@
+[monitoring_servers]
+3.105.85.131  # Remplacez par votre IP réelle
+
+[monitoring_servers:vars]
+ansible_python_interpreter=/usr/bin/python3

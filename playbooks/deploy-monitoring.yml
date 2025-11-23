@@ -1,0 +1,70 @@
+---
+- name: Déployer la stack de monitoring complète
+  hosts: monitoring_servers
+  become: true
+  gather_facts: true
+
+  # Définir les variables directement dans le playbook (pour tester)
+  vars:
+    node_exporter_version: "1.6.1"
+    prometheus_version: "2.47.0"
+    grafana_version: "10.2.0"
+    grafana_port: 3000
+    grafana_admin_user: "admin"
+    grafana_admin_password: "admin"  # À changer en prod
+    prometheus_port: 9090
+    node_exporter_port: 9100
+    domain_name: "3.105.85.131"
+
+  pre_tasks:
+    - name: Mettre à jour le système
+      package:
+        name: "*"
+        state: latest
+      register: yum_result
+      until: yum_result is succeeded
+      retries: 3  # Essayer 3 fois en cas d'échec temporaire
+
+    - name: Installer les dépendances
+      package:
+        name:
+          - firewalld
+          - python3-pip
+        state: present
+
+    - name: Démarrer firewalld
+      systemd:
+        name: firewalld
+        state: started
+        enabled: yes
+
+    - name: Vérifier la version de Node Exporter
+      debug:
+        msg: "Version de Node Exporter : {{ node_exporter_version }}"  # Vérification de la variable
+
+  roles:
+    - node_exporter
+    - prometheus
+    - grafana
+
+  post_tasks:
+    - name: Vérifier que tous les services sont actifs
+      systemd:
+        name: "{{ item }}"
+        state: started  # Utilisez "started" ici, pas "active"
+      loop:
+        - node_exporter
+        - prometheus
+        - grafana-server
+
+
+
+    - name: Afficher les URLs d'accès
+      debug:
+        msg: |
+          ✅ Stack de monitoring déployée !
+          📈 Node Exporter: http://{{ inventory_hostname }}:9100/metrics
+          🔍 Prometheus: http://{{ inventory_hostname }}:9090
+          📊 Grafana: http://{{ inventory_hostname }}:3000
+
+
